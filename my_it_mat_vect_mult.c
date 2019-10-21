@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
     double *y = NULL;
     int n, iters;
     long seed;
-    int total_threads = 4;
+    int total_threads;
 
     // Obtener las dimensiones
     //printf("Ingrese la dimensión n:\n");
@@ -46,6 +46,9 @@ int main(int argc, char *argv[]) {
     //scanf("%ld", &seed);
     seed = strtol(argv[3], NULL, 10);
     srand(seed);
+
+    total_threads = strtol(argv[4], NULL, 10);
+    printf("Data parameters: size: %d  iters: %d   seed: %ld   threads: %d", n, iters, seed, total_threads);
 
     assert(n % total_threads == 0);
 
@@ -61,24 +64,35 @@ int main(int argc, char *argv[]) {
     time = omp_get_wtime() - time;
     printf("\nInitialization time  : %.2f seconds\n", time);
 
-
-    time = omp_get_wtime();
+    //time = omp_get_wtime();
     //mat_vect_mult(A, x, y, n, iters);
-    time = omp_get_wtime() - time;
-    printf("Execution time sequential : %.2f seconds\n", time);
+    //time = omp_get_wtime() - time;
+    //printf("Execution time sequential : %.2f seconds\n", time);
     //print_vector("y Sequential", y, n);
 
-    time = omp_get_wtime();
+    double total_time = 0;
 
-    for (int h = 0; h < iters; h++) {
+    for (int j = 0; j < 10; j++) {
+        time = omp_get_wtime();
+        for (int h = 0; h < iters; h++) {
 #pragma omp parallel num_threads(total_threads)
-        mat_vect_mult_parallel(A, x, y, n, iters);
+            mat_vect_mult_parallel(A, x, y, n, iters);
+//#pragma omp barrier //all thread should be finished
 #pragma omp parallel for // no make difference, the processor parallelized automatically!!
-        for (int i = 0; i < n; i++)
-            x[i] = y[i];
+//unrolling loop
+            for (int i = 0; i < n; i += 4) {
+                x[i] = y[i];
+                x[i + 1] = y[i + 1];
+                x[i + 2] = y[i + 2];
+                x[i + 3] = y[i + 3];
+            }
+        }
+        time = omp_get_wtime() - time;
+        //printf("Execution time parallel: %.2f seconds\n", time);
+        total_time+=time;
     }
-    time = omp_get_wtime() - time;
-    printf("Execution time parallel: %.2f seconds\n", time); //3973.445822 3952.866606 3998.713330
+    //printf("Execution time parallel: %.2f seconds\n", time);
+    printf("Execution time parallel average: %.2f seconds\n", total_time/10); //3973.445822 3952.866606 3998.713330
 
 
     // 2 iters     31823826.704084 31860559.788320

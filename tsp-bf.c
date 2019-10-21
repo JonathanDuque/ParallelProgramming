@@ -26,7 +26,7 @@
 #include <string.h>
 #include <omp.h>
 
-//#define DEBUG
+#define DEBUG
 
 // global variable containing the minimum cost found
 int min_cost = INT_MAX;
@@ -38,6 +38,8 @@ void swap(int *x, int *y);
 int compute_cost(int *tour, int *dist, int n);
 
 void brute_force(int *tour, int *dist, int start, int end);
+
+void brute_force_parallel(int *tour, int *dist, int start, int end);
 
 int main(int argc, char *argv[]) {
     int size = 4;
@@ -92,9 +94,12 @@ int main(int argc, char *argv[]) {
     }
 
     time = omp_get_wtime();
-    brute_force(tour, dist, 0, size - 1);
-    time = omp_get_wtime() - time;
+//#pragma omp parallel
+//#pragma omp single
+    brute_force_parallel(tour, dist, 0, size - 1);
 
+
+    time = omp_get_wtime() - time;
     printf("minimum cost %d\ntour: ", min_cost);
     for (i = 0; i < size; i++)
         printf("%d ", best_tour[i]);
@@ -167,7 +172,32 @@ void brute_force(int *tour, int *dist, int start, int end) {
         for (i = start; i <= end; i++) {
             swap(&tour[start], &tour[i]);
             brute_force(tour, dist, start + 1, end);
-            swap(&tour[start], &tour[i]);
+            swap(&tour[start], &tour[i]); //return change
+        }
+    }
+}
+
+void brute_force_parallel(int *tour, int *dist, int start, int end) {
+    int i, cost;
+    if (start == 3) {
+        brute_force(tour, dist, start + 1, end);
+    } else {
+        if (start == end) {
+//#pragma omp taskwait{
+            // Compute cost of each permution
+            cost = compute_cost(tour, dist, end + 1);
+            if (min_cost > cost) {
+                // Best solution found - copy cost and tour
+                min_cost = cost;
+                memcpy(best_tour, tour, sizeof(int) * (end + 1));
+            }
+           //  };
+        } else {
+            for (i = start; i <= end; i++) {
+                swap(&tour[start], &tour[i]);
+                brute_force_parallel(tour, dist, start + 1, end);
+                swap(&tour[start], &tour[i]); //return change
+            }
         }
     }
 }
