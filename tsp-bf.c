@@ -25,8 +25,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <omp.h>
+#include <math.h>
 
-#define DEBUG
+//#define DEBUG
 
 // global variable containing the minimum cost found
 int min_cost = INT_MAX;
@@ -39,7 +40,11 @@ int compute_cost(int *tour, int *dist, int n);
 
 void brute_force(int *tour, int *dist, int start, int end);
 
+void brute_force_p(int *tour, int *dist, int start, int end);
+
 void brute_force_parallel(int *tour, int *dist, int start, int end);
+
+void eval_cost(int *tour, int *dist, int end);
 
 int main(int argc, char *argv[]) {
     int size = 4;
@@ -54,6 +59,8 @@ int main(int argc, char *argv[]) {
     size = strtol(argv[1], NULL, 10);
     seed = argc == 3 ? strtol(argv[2], NULL, 10) : 1L;
 
+    int parallel = 0;//1 is true
+    parallel = strtol(argv[3], NULL, 10);
     //random number seed
     srand(seed);
 
@@ -94,10 +101,14 @@ int main(int argc, char *argv[]) {
     }
 
     time = omp_get_wtime();
-//#pragma omp parallel
-//#pragma omp single
-    brute_force_parallel(tour, dist, 0, size - 1);
 
+    if (parallel == 1) {
+        #pragma omp parallel
+        #pragma omp single
+        brute_force_parallel(tour, dist, 0, size - 1);
+    } else {
+        brute_force(tour, dist, 0, size - 1);
+    }
 
     time = omp_get_wtime() - time;
     printf("minimum cost %d\ntour: ", min_cost);
@@ -158,6 +169,41 @@ int compute_cost(int *tour, int *dist, int size) {
  *  \param start tour vector initial position 
  *  \param end tour vector last position 
  */
+void brute_force_parallel(int *tour, int *dist, int start, int end) {
+    int i;
+    //if (start != end) {
+    if (end - start < 7) {
+        brute_force_p(tour, dist, start, end);
+    } else {
+        int first_end = (int) floor((end - start) / 2);
+#pragma omp task
+        for (i = start; i <= first_end; i++) {
+            swap(&tour[start], &tour[i]);
+            brute_force_parallel(tour, dist, start + 1, end);
+            swap(&tour[start], &tour[i]); //return change
+        }
+
+#pragma omp task
+        for (i = first_end + 1; i <= end; i++) {
+            swap(&tour[start], &tour[i]);
+            brute_force_parallel(tour, dist, start + 1, end);
+            swap(&tour[start], &tour[i]); //return change
+        }
+#pragma omp taskwait
+    }
+
+    //  }
+    /*else {
+        // Compute cost of each permution
+        cost = compute_cost(tour, dist, end + 1);
+        if (min_cost > cost) {
+            // Best solution found - copy cost and tour
+            min_cost = cost;
+            memcpy(best_tour, tour, sizeof(int) * (end + 1));
+        }
+    }*/
+}
+
 void brute_force(int *tour, int *dist, int start, int end) {
     int i, cost;
     if (start == end) {
@@ -177,27 +223,27 @@ void brute_force(int *tour, int *dist, int start, int end) {
     }
 }
 
-void brute_force_parallel(int *tour, int *dist, int start, int end) {
+void brute_force_p(int *tour, int *dist, int start, int end) {
     int i, cost;
-    if (start == 3) {
-        brute_force(tour, dist, start + 1, end);
+    if (start == end) {
+        // Compute cost of each permution
+        #pragma omp critical
+        eval_cost(tour,dist, end);
     } else {
-        if (start == end) {
-//#pragma omp taskwait{
-            // Compute cost of each permution
-            cost = compute_cost(tour, dist, end + 1);
-            if (min_cost > cost) {
-                // Best solution found - copy cost and tour
-                min_cost = cost;
-                memcpy(best_tour, tour, sizeof(int) * (end + 1));
-            }
-           //  };
-        } else {
-            for (i = start; i <= end; i++) {
-                swap(&tour[start], &tour[i]);
-                brute_force_parallel(tour, dist, start + 1, end);
-                swap(&tour[start], &tour[i]); //return change
-            }
+        for (i = start; i <= end; i++) {
+            swap(&tour[start], &tour[i]);
+            brute_force_p(tour, dist, start + 1, end);
+            swap(&tour[start], &tour[i]); //return change
         }
+    }
+}
+
+void eval_cost(int *tour, int *dist, int end){
+    int cost;
+    cost = compute_cost(tour, dist, end + 1);
+    if (min_cost > cost) {
+        // Best solution found - copy cost and tour
+        min_cost = cost;
+        memcpy(best_tour, tour, sizeof(int) * (end + 1));
     }
 }
