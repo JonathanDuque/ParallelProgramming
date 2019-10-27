@@ -71,8 +71,9 @@ int main(int argc, char *argv[]) {
     //print_vector("y Sequential", y, n);
 
     double total_time = 0;
+    int experiments = 1;
 
-    for (int j = 0; j < 10; j++) {
+    for (int j = 0; j < experiments; j++) {
         time = omp_get_wtime();
         for (int h = 0; h < iters; h++) {
 #pragma omp parallel num_threads(total_threads)
@@ -92,7 +93,7 @@ int main(int argc, char *argv[]) {
         total_time+=time;
     }
     //printf("Execution time parallel: %.2f seconds\n", time);
-    printf("Execution time parallel average: %.2f seconds\n", total_time/10); //3973.445822 3952.866606 3998.713330
+    printf("Execution time parallel average: %.2f seconds\n", total_time/experiments); //3973.445822 3952.866606 3998.713330
 
 
     // 2 iters     31823826.704084 31860559.788320

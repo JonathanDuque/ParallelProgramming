@@ -46,6 +46,8 @@ void brute_force_parallel(int *tour, int *dist, int start, int end);
 
 void eval_cost(int *tour, int *dist, int end, int *my_best_tour, int *my_min_cost);
 
+void brute_force_parallel_v2(int *tour, int *dist, int start, int end);
+
 int main(int argc, char *argv[]) {
     int size = 4;
     long seed;
@@ -101,14 +103,21 @@ int main(int argc, char *argv[]) {
     }
 
     time = omp_get_wtime();
+    if (total_threads == 1) {
+        brute_force(tour, dist, 0, size - 1);
+    } else {
+#pragma omp parallel num_threads(total_threads)
+        brute_force_parallel_v2(tour, dist, 0, size - 1);
+    }
 
+    /*
     if (total_threads != 1) {
 #pragma omp parallel
 #pragma omp single
         brute_force_parallel(tour, dist, 0, size - 1);
     } else {
         brute_force(tour, dist, 0, size - 1);
-    }
+    }*/
 
     time = omp_get_wtime() - time;
     printf("minimum cost %d\ntour: ", min_cost);
@@ -167,8 +176,44 @@ int compute_cost(int *tour, int *dist, int size) {
  *  \param tour pointer to the tour vector}
  *  \param dist pointer to the distance matrix
  *  \param start tour vector initial position 
- *  \param end tour vector last position 
+ *  \param end tour vector last position
+ *
  */
+
+void brute_force_parallel_v2(int *tour, int *dist, int start, int end) {
+    //size  = end + 1
+    int my_rank = omp_get_thread_num();
+    int total_thread = omp_get_num_threads();
+    int partition = (int) floor((end + 1) / total_thread);
+
+    int local_start = my_rank * partition;
+    int local_end = local_start + partition;
+
+    //if ((end + 1) % 2 != 0 && my_rank == 1) {
+      //  local_end += 1;
+    //}
+    int my_min_cost = INT_MAX;
+
+    printf("Thread %d: %d - %d.\n", my_rank, local_start, local_end);
+
+    //every threads has its best_tour and tour
+    int *my_best_tour = (int *) malloc(sizeof(int) * end + 1);
+    int *my_tour = (int *) malloc(sizeof(int) * end + 1);
+    memcpy(my_tour, tour, sizeof(int) * (end + 1));
+    for (int i = local_start; i < local_end; i++) {
+        //printf("\nfrom thread %D change %d for %d\n", my_rank, my_tour[start], my_tour[i]);
+        swap(&my_tour[start], &my_tour[i]);
+        brute_force_p(my_tour, dist, start + 1, end, my_best_tour, &my_min_cost);
+        swap(&my_tour[start], &my_tour[i]); //return change
+    }
+
+    printf("\nThread %D, I finished\n", my_rank);
+
+#pragma omp critical
+    eval_cost(my_best_tour, dist, end, best_tour, &min_cost);
+
+}
+
 void brute_force_parallel(int *tour, int *dist, int start, int end) {
     //if (start != end) {
     //if (end - start < 7) {
@@ -213,18 +258,6 @@ void brute_force_parallel(int *tour, int *dist, int start, int end) {
 
     eval_cost(my_best_tour1, dist, end, best_tour, &min_cost);
     eval_cost(my_best_tour2, dist, end, best_tour, &min_cost);
-    //}
-
-    //  }
-    /*else {
-        // Compute cost of each permution
-        cost = compute_cost(tour, dist, end + 1);
-        if (min_cost > cost) {
-            // Best solution found - copy cost and tour
-            min_cost = cost;
-            memcpy(best_tour, tour, sizeof(int) * (end + 1));
-        }
-    }*/
 }
 
 void brute_force(int *tour, int *dist, int start, int end) {
