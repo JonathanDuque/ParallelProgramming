@@ -89,7 +89,6 @@ int main(int argc, char *argv[]) {
             }
         }
         time = omp_get_wtime() - time;
-        //printf("Execution time parallel: %.2f seconds\n", time);
         total_time+=time;
     }
     //printf("Execution time parallel: %.2f seconds\n", time);

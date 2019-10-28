@@ -38,15 +38,13 @@ void swap(int *x, int *y);
 
 int compute_cost(int *tour, int *dist, int n);
 
-void brute_force(int *tour, int *dist, int start, int end);
+void brute_force_sequential(int *tour, int *dist, int start, int end);
 
-void brute_force_p(int *tour, int *dist, int start, int end, int *my_best_tour, int *my_min_cost);
+void brute_force_recursive(int *tour, int *dist, int start, int end, int *my_best_tour, int *my_min_cost);
 
-void brute_force_parallel(int *tour, int *dist, int start, int end);
+void brute_force_parallel(int *tour, int *dist, int start, int end, int *tasks_assign);
 
-void eval_cost(int *tour, int *dist, int end, int *my_best_tour, int *my_min_cost);
-
-void brute_force_parallel_v2(int *tour, int *dist, int start, int end);
+int *get_my_tasks(int my_rank, int *tasks_assign, int maximum_tasks, int size);
 
 int main(int argc, char *argv[]) {
     int size = 4;
@@ -61,8 +59,9 @@ int main(int argc, char *argv[]) {
     size = strtol(argv[1], NULL, 10);
     seed = argc == 3 ? strtol(argv[2], NULL, 10) : 1L;
 
-    int total_threads = 1;//
-    total_threads = strtol(argv[3], NULL, 10);
+    int iterations = strtol(argv[3], NULL, 10);
+    int total_threads = strtol(argv[4], NULL, 10);
+
     //random number seed
     srand(seed);
 
@@ -98,32 +97,27 @@ int main(int argc, char *argv[]) {
     int *tour = (int *) malloc(sizeof(int) * size);
     //tour initialization
 
+    //this array saved the tour changes assigned for each thread
+    int *tasks_assigned_for_thread = (int *) malloc(sizeof(int) * size);
     for (i = 0; i < size; i++) {
         tour[i] = i;
+        //the module operation gives a number between 0 and total_threads-1
+        //this number will be the thread responsible two execute the change that represent the index of
+        // tasks_assigned_for_thread array
+        tasks_assigned_for_thread[i] = i % total_threads;
     }
 
     time = omp_get_wtime();
-    if (total_threads == 1) {
-        brute_force(tour, dist, 0, size - 1);
-    } else {
+    for (int k = 0; k < iterations ; ++k) {
 #pragma omp parallel num_threads(total_threads)
-        brute_force_parallel_v2(tour, dist, 0, size - 1);
+        brute_force_parallel(tour, dist, 0, size - 1, tasks_assigned_for_thread);
     }
-
-    /*
-    if (total_threads != 1) {
-#pragma omp parallel
-#pragma omp single
-        brute_force_parallel(tour, dist, 0, size - 1);
-    } else {
-        brute_force(tour, dist, 0, size - 1);
-    }*/
-
     time = omp_get_wtime() - time;
-    printf("minimum cost %d\ntour: ", min_cost);
+
+    printf("\nMinimum cost %d\ntour: ", min_cost);
     for (i = 0; i < size; i++)
         printf("%d ", best_tour[i]);
-    printf("\nExecution time: %.2f seconds\n", time);
+    printf("\nExecution time: %.2f seconds\n", time/iterations);
 
     return 0;
 }
@@ -180,87 +174,59 @@ int compute_cost(int *tour, int *dist, int size) {
  *
  */
 
-void brute_force_parallel_v2(int *tour, int *dist, int start, int end) {
+void brute_force_parallel(int *tour, int *dist, int start, int end, int *tasks_assign) {
     //size  = end + 1
     int my_rank = omp_get_thread_num();
     int total_thread = omp_get_num_threads();
-    int partition = (int) floor((end + 1) / total_thread);
 
-    int local_start = my_rank * partition;
-    int local_end = local_start + partition;
+    int maximum_task_for_thread = (int) floor((end + 1) / total_thread);
 
-    //if ((end + 1) % 2 != 0 && my_rank == 1) {
-      //  local_end += 1;
-    //}
+    int *my_tasks;
+    //this occur when the load for this thread is unbalanced
+    if ((end + 1) % total_thread != 0)
+        maximum_task_for_thread += 1;
+    //printf(" maximum task %d ", maximum_task_for_thread);
+
+    //getting the array tasks corresponding to my rank
+    my_tasks = get_my_tasks(my_rank, tasks_assign, maximum_task_for_thread, end + 1);
+
+    /*
+#pragma omp critical
+    printf("Thread %d: my tasks.\n", my_rank);
+    for (int i = 0; i < maximum_task; i++)
+        printf("%d ", my_tasks[i]);
+    printf("\n ");
+     */
+
+    //every thread has its best_tour , tour and min_cost
     int my_min_cost = INT_MAX;
-
-    printf("Thread %d: %d - %d.\n", my_rank, local_start, local_end);
-
-    //every threads has its best_tour and tour
     int *my_best_tour = (int *) malloc(sizeof(int) * end + 1);
     int *my_tour = (int *) malloc(sizeof(int) * end + 1);
     memcpy(my_tour, tour, sizeof(int) * (end + 1));
-    for (int i = local_start; i < local_end; i++) {
+
+    for (int i = 0; i < maximum_task_for_thread; i++) {
         //printf("\nfrom thread %D change %d for %d\n", my_rank, my_tour[start], my_tour[i]);
-        swap(&my_tour[start], &my_tour[i]);
-        brute_force_p(my_tour, dist, start + 1, end, my_best_tour, &my_min_cost);
-        swap(&my_tour[start], &my_tour[i]); //return change
+        if (my_tasks[i] == -1)
+            continue;
+        swap(&my_tour[start], &my_tour[my_tasks[i]]);
+        brute_force_recursive(my_tour, dist, start + 1, end, my_best_tour, &my_min_cost);
+        swap(&my_tour[start], &my_tour[my_tasks[i]]); //return change
     }
 
-    printf("\nThread %D, I finished\n", my_rank);
+    int cost = compute_cost(my_best_tour, dist, end + 1);
 
+    //printf("\nThread %d finished\n", my_rank);
+    // Compute cost of each permutation
 #pragma omp critical
-    eval_cost(my_best_tour, dist, end, best_tour, &min_cost);
-
+    if (min_cost > cost) {
+        // Best solution found - copy cost and tour
+        min_cost = cost;
+        //update global variable best_tour
+        memcpy(best_tour, my_best_tour, sizeof(int) * (end + 1));
+    }
 }
 
-void brute_force_parallel(int *tour, int *dist, int start, int end) {
-    //if (start != end) {
-    //if (end - start < 7) {
-    //   brute_force_p(tour, dist, start, end);
-    // } else {
-    int local_end = (int) floor((end - start) / 2);
-    int *my_best_tour1, *my_best_tour2;
-    my_best_tour1 = (int *) malloc(sizeof(int) * end + 1);
-    my_best_tour2 = (int *) malloc(sizeof(int) * end + 1);
-
-#pragma omp task
-    {
-        int i;
-        int *my_tour = (int *) malloc(sizeof(int) * end + 1);
-        int my_min_cost1 = INT_MAX;
-        memcpy(my_tour, tour, sizeof(int) * (end + 1));
-        //memcpy(my_best_tour1, tour, sizeof(int) * (end + 1));
-        for (i = start; i <= local_end; i++) {
-            //printf("\nfrom task 1 change %d for %d\n", my_tour[start], my_tour[i]);
-            swap(&my_tour[start], &my_tour[i]);
-            brute_force_p(my_tour, dist, start + 1, end, my_best_tour1, &my_min_cost1);
-            swap(&my_tour[start], &my_tour[i]); //return change
-        }
-
-    }
-
-#pragma omp task
-    {
-        int i;
-        int *my_tour = (int *) malloc(sizeof(int) * end + 1);
-        memcpy(my_tour, tour, sizeof(int) * (end + 1));
-        int my_min_cost2 = INT_MAX;
-        //memcpy(my_best_tour2, tour, sizeof(int) * (end + 1));
-        for (i = local_end + 1; i <= end; i++) {
-            //printf("\nfrom task 2 change %d for %d\n", my_tour[start], my_tour[i]);
-            swap(&my_tour[start], &my_tour[i]);
-            brute_force_p(my_tour, dist, start + 1, end, my_best_tour2, &my_min_cost2);
-            swap(&my_tour[start], &my_tour[i]); //return change
-        }
-    }
-#pragma omp taskwait
-
-    eval_cost(my_best_tour1, dist, end, best_tour, &min_cost);
-    eval_cost(my_best_tour2, dist, end, best_tour, &min_cost);
-}
-
-void brute_force(int *tour, int *dist, int start, int end) {
+void brute_force_sequential(int *tour, int *dist, int start, int end) {
     int i, cost;
     if (start == end) {
         // Compute cost of each permutation
@@ -273,40 +239,46 @@ void brute_force(int *tour, int *dist, int start, int end) {
     } else {
         for (i = start; i <= end; i++) {
             swap(&tour[start], &tour[i]);
-            brute_force(tour, dist, start + 1, end);
+            brute_force_sequential(tour, dist, start + 1, end);
             swap(&tour[start], &tour[i]); //return change
         }
     }
 }
 
-void brute_force_p(int *tour, int *dist, int start, int end, int *my_best_tour, int *my_min_cost) {
+void brute_force_recursive(int *tour, int *dist, int start, int end, int *my_best_tour, int *my_min_cost) {
     int i, cost;
     if (start == end) {
         // Compute cost of each permution
-        //#pragma omp critical
-        eval_cost(tour, dist, end, my_best_tour, my_min_cost);
+        cost = compute_cost(tour, dist, end + 1);
+
+        if (*my_min_cost > cost) {
+            // Best solution found - copy cost and tour
+            *my_min_cost = cost;
+            memcpy(my_best_tour, tour, sizeof(int) * (end + 1));
+        }
     } else {
         for (i = start; i <= end; i++) {
             swap(&tour[start], &tour[i]);
-            brute_force_p(tour, dist, start + 1, end, my_best_tour, my_min_cost);
+            brute_force_recursive(tour, dist, start + 1, end, my_best_tour, my_min_cost);
             swap(&tour[start], &tour[i]); //return change
         }
     }
 }
 
-void eval_cost(int *tour, int *dist, int end, int *my_best_tour, int *my_min_cost) {
-    int cost;
-    cost = compute_cost(tour, dist, end + 1);
+int *get_my_tasks(int my_rank, int *tasks_assign, int maximum_tasks, int size) {
+    int *my_tasks = (int *) malloc(sizeof(int) * maximum_tasks);
 
-    //printf("Tour ");
-    //for(int i = 0; i < end+1; i++){
-    //  printf("%d ", tour[i]);
-    //}
-    //printf("cost = %d\n",cost);
-
-    if (*my_min_cost > cost) {
-        // Best solution found - copy cost and tour
-        *my_min_cost = cost;
-        memcpy(my_best_tour, tour, sizeof(int) * (end + 1));
+    for (int j = 0; j < maximum_tasks; ++j) {
+        my_tasks[j] = -1;
     }
+
+    int p = 0;
+    for (int i = 0; i < size; i++) {
+        if (tasks_assign[i] == my_rank) {
+            my_tasks[p] = i;
+            p++;
+        }
+    }
+
+    return my_tasks;
 }
