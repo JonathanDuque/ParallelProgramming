@@ -3,7 +3,8 @@
 #include <mpi.h>     /* For MPI functions, etc */
 #include <stdlib.h>
 
-const int MAX_STRING = 100;
+#define DEBUG
+
 
 /*void get_input(int my_rank, int comm_size, double *A, double *x, int *n, int *iters);*/
 
@@ -18,14 +19,15 @@ void vector_init(double *v, int n, int my_rank);
 /* función para generar <size> cantidad de datos aleatorios */
 void gen_data(double *array, int size);
 
-void my_bcast(void* data, int count, MPI_Datatype datatype, int root, MPI_Comm communicator);
+void my_bcast(void *data, int count, MPI_Datatype datatype, int root, MPI_Comm communicator);
 
 int main(int argc, char *argv[]) {
     //char greeting[MAX_STRING];  /* String storing message */
     int comm_sz;               /* Number of processes    */
     int my_rank;               /* My process rank        */
     int n = 1, seed = 1;
-    int i,j;
+    int i, j;
+    double local_start, local_finish;
 
     MPI_Init(&argc, &argv);
     //name dimension and seed
@@ -46,22 +48,31 @@ int main(int argc, char *argv[]) {
     //printf("Greetings from process %d of %d!\n", my_rank, comm_sz);
 
     // Create and initialize matrix and vectors
-    matrix_init(local_A, local_n, n, my_rank);
     vector_init(x, n, my_rank);
+    matrix_init(local_A, local_n, n, my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
+#ifdef DEBUG
+    print_vector("A", local_A, local_n*n, my_rank);
+    print_vector("x", x, n, my_rank);
+#endif // DEBUG
 
-    //print_vector("A", local_A, local_n*n, my_rank);
-    //print_vector("x", x, n, my_rank);
-    //print_vector("A", local_A, local_n * n);
-
+    local_start = MPI_Wtime();
+    /*Inicio del código al cual queremos tomarle el tiempo */
     for (i = 0; i < local_n; i++) {
         local_y[i] = 0.0;
         for (j = 0; j < n; j++)
             local_y[i] += local_A[i * n + j] * x[j];
     }
-    //MPI_Barrier(MPI_COMM_WORLD);//no continue until all process finish
+    MPI_Barrier(MPI_COMM_WORLD);//no continue until all process finish
+    /*Fin del código al cual queremos tomarle el tiempo*/
+    local_finish = MPI_Wtime();
 
-    print_vector2(local_y,local_n,n,"Y ", my_rank);
+    if (my_rank == 0) {
+        // Solo el proceso 0 imprime el tiempo transcurrido
+        printf("Tiempo de ejecución = %5.2f segundos \n", (local_finish - local_start));
+    }
+
+    print_vector2(local_y, local_n, n, "Y ", my_rank);
 
     /*double *y;
     if (my_rank == 0) {
@@ -103,7 +114,7 @@ void matrix_init(double *local_A, int local_n, int n, int my_rank) {
     }
 }
 
-void vector_init( double *v, int n, int my_rank) {
+void vector_init(double *v, int n, int my_rank) {
     //create vector in proc 0
     //double *v = NULL;
     if (my_rank == 0) {
@@ -123,7 +134,7 @@ void vector_init( double *v, int n, int my_rank) {
 
 }
 
-void my_bcast(void* data, int count, MPI_Datatype datatype, int root, MPI_Comm communicator) {
+void my_bcast(void *data, int count, MPI_Datatype datatype, int root, MPI_Comm communicator) {
     int world_rank;
     MPI_Comm_rank(communicator, &world_rank);
     int world_size;
