@@ -14,16 +14,13 @@
 #include <omp.h>
 #include <assert.h>
 
-/* función para generar <size> cantidad de datos aleatorios */
+/* function to generate <size> amount of random data */
 void gen_data(double *array, int size);
 
-/* función para multiplicar iterativamente un matriz
- * <m x n> por un vector de tam <n> */
 void mat_vect_mult(double *A, double *x, double *y, int n, int it);
 
 void mat_vect_mult_parallel(double *A, double *x, double *y, int n, int it);
 
-/* función para imprimir un vector llamado <name> de tamaño <m>*/
 void print_vector(char *name, double *y, int m);
 
 int main(int argc, char *argv[]) {
@@ -35,24 +32,20 @@ int main(int argc, char *argv[]) {
     long seed;
     int total_threads;
 
-    // Obtener las dimensiones
-    //printf("Ingrese la dimensión n:\n");
-    //scanf("%d", &n);
+    // get dimensions
     n = strtol(argv[1], NULL, 10);
-    //printf("Ingrese el número de iteraciones:\n");
-    //scanf("%d", &iters);
+    // get iterations
     iters = strtol(argv[2], NULL, 10);
-    //printf("Ingrese semilla para el generador de números aleatorios:\n");
-    //scanf("%ld", &seed);
+    // get seed
     seed = strtol(argv[3], NULL, 10);
     srand(seed);
 
     total_threads = strtol(argv[4], NULL, 10);
     printf("Data parameters: size: %d  iters: %d   seed: %ld   threads: %d", n, iters, seed, total_threads);
 
-    assert(n % total_threads == 0);
+    assert(n % total_threads == 0);//check dimension is multiple of number of threads
 
-    // la matriz A tendrá una representación unidimensional
+    //matrix is  unidimensional
     A = malloc(sizeof(double) * n * n);
     x = malloc(sizeof(double) * n);
     y = malloc(sizeof(double) * n);
@@ -79,7 +72,7 @@ int main(int argc, char *argv[]) {
 #pragma omp parallel num_threads(total_threads)
             mat_vect_mult_parallel(A, x, y, n, iters);
 //#pragma omp barrier //all thread should be finished
-#pragma omp parallel for // no make difference, the processor parallelized automatically!!
+#pragma omp parallel for // no make difference, the processor parallelize automatically!!
 //unrolling loop
             for (int i = 0; i < n; i += 4) {
                 x[i] = y[i];
@@ -92,12 +85,9 @@ int main(int argc, char *argv[]) {
         total_time+=time;
     }
     //printf("Execution time parallel: %.2f seconds\n", time);
-    printf("Execution time parallel average: %.2f seconds\n", total_time/experiments); //3973.445822 3952.866606 3998.713330
+    printf("Execution time parallel average: %.2f seconds\n", total_time/experiments);
 
-
-    // 2 iters     31823826.704084 31860559.788320
-    //print_vector("y", y, n);  //2.057209 2.516496 3.516359 3.734857 1.915111 2.585758 2.906468 3.581800 2.101284 3.334560 2.235218 2.519298
-    free(A); // 2 iters 15.565738 13.449727 17.000071 21.118892 15.146032 14.727463 17.298086 20.556885 13.282327 19.676767 12.972550 16.944703
+    //print_vector("y", y, n);
     free(x);
     free(y);
 
@@ -151,9 +141,6 @@ void mat_vect_mult_parallel(double *A, double *x, double *y, int n, int it) {
     for (i = local_start; i < local_end; i++)
         y[i] = my_local_y[i - local_start];
     // x <= y
-
-    //for (i = 0; i < n; i++)
-    //x[i] = y[i];
 
     //print_vector(" my y", my_local_y, local_n);
 
